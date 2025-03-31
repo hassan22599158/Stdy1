@@ -281,6 +281,39 @@
     .dark-mode .summary-laws {
       background-color: rgba(23, 162, 184, 0.1);
     }
+
+    /* Export/Import Styles */
+    .export-import-section {
+      margin: 25px auto;
+      padding: 20px;
+      background-color: #f8f9fa;
+      border-radius: 8px;
+      box-shadow: 0px 2px 5px rgba(0,0,0,0.1);
+      width: 90%;
+      max-width: 900px;
+    }
+    .dark-mode .export-import-section {
+      background-color: #2d2d2d;
+      border: 1px solid #444;
+    }
+    #exportCode {
+      width: 100%;
+      height: 120px;
+      margin-top: 10px;
+      font-family: monospace;
+    }
+    #restoreBtn {
+      background-color: #28a745;
+    }
+    #restoreBtn:hover {
+      background-color: #218838;
+    }
+    .dark-mode #restoreBtn {
+      background-color: #2e7d32;
+    }
+    .dark-mode #restoreBtn:hover {
+      background-color: #1b5e20;
+    }
   </style>
   <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
   <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
@@ -338,16 +371,29 @@
 
   <div id="summaryBox" style="margin-top: 25px; min-height: 150px;">🔍 لم يتم توليد ملخص بعد.</div>
 
+  <div class="export-import-section">
+    <h3 style="margin-top: 0; color: #28a745;">📤 تصدير / 📥 استرداد حالة الصفحة</h3>
+    <button class="control-btn" onclick="exportPageState()">📤 تصدير الحالة الحالية</button>
+    <button class="control-btn" id="restoreBtn" onclick="showRestoreDialog()">📥 استرداد حالة محفوظة</button>
+    <textarea id="exportCode" placeholder="كود التصدير سيظهر هنا أو الصق كود الاسترداد هنا..." style="display: none;"></textarea>
+    <div id="restoreOptions" style="display: none; margin-top: 10px;">
+      <button class="control-btn" onclick="restorePageState()">✔ تأكيد الاسترداد</button>
+      <button class="clear-search-btn" onclick="hideRestoreDialog()">✖ إلغاء</button>
+    </div>
+  </div>
+
   <button class="control-btn" onclick="toggleDarkMode()" style="margin: 25px auto; padding: 12px 25px;">🌙 تبديل الوضع الليلي</button>
 
   <script>
-    const OPENROUTER_API_KEY = "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";
+    const OPENROUTER_API_KEY = "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";
     let player;
     let notes = [];
     let captionsData = [];
-    let isPlaying = true;
-    let currentHighlights = [];
+    let isPlaying = false;
+    let currentHighlights = {};
+    let playerReady = false;
 
+    // 1. تحميل واجهة برمجة يوتيوب
     function loadYouTubeAPI() {
       const tag = document.createElement('script');
       tag.src = "https://www.youtube.com/iframe_api";
@@ -355,100 +401,147 @@
       firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
     }
 
+    // 2. هذه الدالة ستُستدعى تلقائيًا بواسطة الواجهة البرمجية عند تحميلها
     function onYouTubeIframeAPIReady() {
-      // لا حاجة لتنفيذ أي شيء هنا
+      console.log("YouTube API جاهزة للعمل");
     }
 
+    // 3. دالة للتحقق من جاهزية المشغل
+    function isPlayerReady() {
+      return playerReady && player && typeof player.getPlayerState === 'function';
+    }
+
+    // 4. دالة منفصلة لمعالجة حدث onReady الخاص بالمشغل
+    function onPlayerReady(event) {
+      console.log("المشغل جاهز للاستخدام (onReady event fired)");
+      player = event.target;
+      playerReady = true;
+      updatePlayPauseButton();
+    }
+
+    // 5. دالة تحميل الفيديو عند الضغط على الزر
     function loadVideo() {
       const url = document.getElementById("videoUrl").value;
       const videoId = extractVideoID(url);
-      if (!videoId) return alert("❌ يرجى إدخال رابط صحيح");
+      if (!videoId) {
+        alert("❌ يرجى إدخال رابط يوتيوب صحيح");
+        return;
+      }
 
-      document.getElementById("videoContainer").innerHTML = '<div id="youtubePlayer"></div>';
+      playerReady = false;
+      isPlaying = false;
+      updatePlayPauseButton();
 
-      if (player) {
-        try {
-          player.loadVideoById(videoId);
-        } catch (e) {
-          player = new YT.Player('youtubePlayer', {
-            height: '450',
-            width: '100%',
-            videoId: videoId,
-            events: {
-              'onReady': onPlayerReady,
-              'onStateChange': onPlayerStateChange
-            }
-          });
-        }
+      if (player && typeof player.loadVideoById === 'function') {
+        console.log("المشغل موجود، جاري تحميل فيديو جديد:", videoId);
+        player.loadVideoById(videoId);
       } else {
+        console.log("إنشاء مشغل يوتيوب جديد للفيديو:", videoId);
+        document.getElementById("videoContainer").innerHTML = '<div id="youtubePlayer"></div>';
         player = new YT.Player('youtubePlayer', {
           height: '450',
           width: '100%',
           videoId: videoId,
+          playerVars: {
+              'playsinline': 1
+          },
           events: {
-            'onReady': onPlayerReady,
-            'onStateChange': onPlayerStateChange
+              'onReady': onPlayerReady,
+              'onStateChange': onPlayerStateChange
           }
         });
       }
 
       fetchTranscript(videoId);
-      isPlaying = true;
-      updatePlayPauseButton();
     }
 
     function extractVideoID(url) {
-      const match = url.match(/(?:youtube\.com\/.*v=|youtu\.be\/)([^&]+)/);
-      return match ? match[1] : null;
-    }
-
-    function onPlayerReady(event) {
-      player = event.target;
-      console.log("المشغل جاهز للاستخدام");
+      const patterns = [
+          /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/\s]{11})/i
+      ];
+      for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) {
+          return match[1];
+        }
+      }
+      return null;
     }
 
     function onPlayerStateChange(event) {
       if (event.data == YT.PlayerState.PLAYING) {
         isPlaying = true;
-      } else if (event.data == YT.PlayerState.PAUSED) {
+      } else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
         isPlaying = false;
       }
       updatePlayPauseButton();
     }
 
     function togglePlayPause() {
-      if (player && player.getPlayerState) {
-        try {
-          if (player.getPlayerState() === YT.PlayerState.PLAYING) {
-            player.pauseVideo();
-            isPlaying = false;
-          } else {
-            player.playVideo();
-            isPlaying = true;
-          }
-          updatePlayPauseButton();
-        } catch (e) {
-          console.error("حدث خطأ في التحكم بالمشغل:", e);
-          alert("❌ حدث خطأ في التحكم بالمشغل، يرجى المحاولة مرة أخرى");
+      if (!isPlayerReady()) {
+        alert("❌ يرجى الانتظار حتى يتم تحميل الفيديو بالكامل وجاهزيته");
+        return;
+      }
+      try {
+        if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+          player.pauseVideo();
+        } else {
+          player.playVideo();
         }
-      } else {
-        alert("❌ المشغل غير جاهز بعد، يرجى الانتظار أو إعادة تحميل الفيديو");
+      } catch (e) {
+        console.error("حدث خطأ في التحكم بالمشغل:", e);
+        alert("❌ حدث خطأ في التحكم بالمشغل");
       }
     }
 
     function updatePlayPauseButton() {
       const btn = document.getElementById("playPauseBtn");
-      if (isPlaying) {
+      if (!playerReady) {
+          btn.innerHTML = "⏳ تحميل...";
+          btn.disabled = true;
+      } else if (isPlaying) {
         btn.innerHTML = "⏸ إيقاف";
+        btn.disabled = false;
       } else {
         btn.innerHTML = "▶ تشغيل";
+        btn.disabled = false;
+      }
+    }
+
+    function changeSpeed(speed) {
+      if (!isPlayerReady()) {
+        alert("❌ يرجى الانتظار حتى يتم تحميل الفيديو بالكامل وجاهزيته");
+        return;
+      }
+      try {
+        player.setPlaybackRate(speed);
+        console.log("تم تغيير السرعة إلى:", speed);
+      } catch (e) {
+        console.error("حدث خطأ في تغيير السرعة:", e);
+        alert("❌ حدث خطأ في تغيير السرعة");
+      }
+    }
+
+    function seek(seconds) {
+      if (!isPlayerReady()) {
+        alert("❌ يرجى الانتظار حتى يتم تحميل الفيديو بالكامل وجاهزيته");
+        return;
+      }
+      try {
+        let currentTime = player.getCurrentTime();
+        let newTime = currentTime + seconds;
+        if (newTime < 0) newTime = 0;
+        player.seekTo(newTime, true);
+        console.log("تم الانتقال إلى:", newTime);
+      } catch (e) {
+        console.error("حدث خطأ في الانتقال:", e);
+        alert("❌ حدث خطأ في الانتقال");
       }
     }
 
     async function fetchTranscript(videoId) {
       document.getElementById("transcriptInput").value = "⏳ جاري جلب الترجمة...";
       try {
-        // مثال لنص الفيديو (يمكن استبداله بAPI حقيقي)
         const mockTranscript = `1. مقدمة عن الفيزياء
 في هذا الدرس سنتعرف على أساسيات الكهرباء والتيار الكهربائي.
 2. التيار الكهربائي
@@ -461,21 +554,22 @@
 \\[ V = I \\times R \\]
 حيث R هي المقاومة وتقاس بالأوم (Ω).
 4. تطبيقات عملية
-إذا كان لدينا سلك طوله L1 ومساحة مقطعه A1 ومقاومته R1، وعندما يصبح طول السلك \\( L2 = 2L1 \\))، تصبح المساحة \\( A2 = \\frac{A1}{2} \\).
+إذا كان لدينا سلك طوله L1 ومساحة مقطعه A1 ومقاومته R1، وعندما يصبح طول السلك \\( L2 = 2L1 \\)), تصبح المساحة \\( A2 = \\frac{A1}{2} \\).
 المقاومة الجديدة:
 \\[
 R2 = \\rho \\frac{2L1}{\\frac{A1}{2}} = 4R1
 \\]`;
 
         captionsData = [
-          { time: 10, text: "مقدمة عن الفيزياء" },
-          { time: 30, text: "التيار الكهربائي" },
-          { time: 60, text: "قانون أوم" },
-          { time: 90, text: "تطبيقات عملية" }
+          { time: 5, text: "مقدمة عن الفيزياء" },
+          { time: 15, text: "التيار الكهربائي" },
+          { time: 25, text: "قانون أوم" },
+          { time: 35, text: "تطبيقات عملية" }
         ];
         document.getElementById("transcriptInput").value = mockTranscript;
       } catch (error) {
         document.getElementById("transcriptInput").value = "⚠️ حدث خطأ أثناء جلب الترجمة، أدخل النص يدويًا.";
+        console.error("خطأ جلب الترجمة:", error);
       }
     }
 
@@ -483,90 +577,69 @@ R2 = \\rho \\frac{2L1}{\\frac{A1}{2}} = 4R1
       const query = document.getElementById("searchText").value.trim();
       if (!query) return alert("❌ يرجى إدخال نص للبحث");
 
-      const transcript = document.getElementById("transcriptInput").value;
+      const transcriptArea = document.getElementById("transcriptInput");
+      let transcript = transcriptArea.value;
       if (!transcript) return alert("❌ لا يوجد نص للبحث فيه");
 
-      // إزالة التظليل السابق
       removeHighlights();
-      // تقسيم النص إلى أسطر
+      transcript = document.getElementById("transcriptInput").value;
+
       const lines = transcript.split('\n');
       let resultsHTML = '';
       let foundCount = 0;
+      let firstMatchLineIndex = -1;
 
       lines.forEach((line, index) => {
         if (line.toLowerCase().includes(query.toLowerCase())) {
           foundCount++;
-          // تظليل الكلمة في السطر
-          const highlightedLine = highlightText(line, query);
-          resultsHTML += `<div class="highlight-line" onclick="scrollToLine(${index})">
-            <b>السطر ${index + 1}:</b> ${highlightedLine}
+          if (firstMatchLineIndex === -1) {
+              firstMatchLineIndex = index;
+          }
+          resultsHTML += `<div class="highlight-line" onclick="jumpToLineAndHighlight(${index})">
+            <b>السطر ${index + 1}:</b> ${escapeHtml(line)}
           </div>`;
         }
       });
+
       if (foundCount > 0) {
         document.getElementById("searchResults").innerHTML = `
           <p>تم العثور على ${foundCount} نتائج:</p>
           ${resultsHTML}
         `;
-        // حفظ أماكن التظليل لإزالتها لاحقاً
-        currentHighlights = highlightAllOccurrences(transcript, query);
-        document.getElementById("transcriptInput").value = currentHighlights.highlightedText;
-        // إظهار زر إيقاف البحث
+        highlightAllOccurrences(transcript, query);
         document.getElementById("clearSearchBtn").style.display = 'inline-block';
-        // التمرير إلى أول نتيجة
-        const firstLine = transcript.split('\n').findIndex(line =>
-          line.toLowerCase().includes(query.toLowerCase())
-        );
-        if (firstLine >= 0) {
-          scrollToLine(firstLine);
-        }
       } else {
         document.getElementById("searchResults").innerHTML = "⚠️ لم يتم العثور على نتائج";
         document.getElementById("clearSearchBtn").style.display = 'none';
       }
     }
 
+    function escapeHtml(unsafe) {
+        return unsafe
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
+     }
+
+    function jumpToLineAndHighlight(lineNumber) {
+        scrollToLine(lineNumber);
+    }
+
     function clearSearch() {
-      // إزالة التظليل
       removeHighlights();
-      // إخفاء زر إيقاف البحث
       document.getElementById("clearSearchBtn").style.display = 'none';
-      // مسح نتائج البحث
       document.getElementById("searchResults").innerHTML = '';
-      // مسح نص البحث
       document.getElementById("searchText").value = '';
     }
 
-    function highlightText(text, query) {
-      const regex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
-      return text.replace(regex, '<span class="highlight">$1</span>');
-    }
-
     function highlightAllOccurrences(text, query) {
-      const lines = text.split('\n');
-      let highlightedLines = [];
-      let occurrences = [];
+      const regex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
+      const highlightedText = text.replace(regex, '<span class="highlight">$1</span>');
 
-      lines.forEach((line, lineIndex) => {
-        if (line.toLowerCase().includes(query.toLowerCase())) {
-          const regex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
-          let match;
-          while ((match = regex.exec(line)) !== null) {
-            occurrences.push({
-              line: lineIndex,
-              start: match.index,
-              end: match.index + match[0].length
-            });
-          }
-          highlightedLines.push(line.replace(regex, '<span class="highlight">$1</span>'));
-        } else {
-          highlightedLines.push(line);
-        }
-      });
-      return {
-        highlightedText: highlightedLines.join('\n'),
-        occurrences: occurrences
-      };
+      currentHighlights.query = query;
+      currentHighlights.originalText = text;
     }
 
     function escapeRegExp(string) {
@@ -574,41 +647,42 @@ R2 = \\rho \\frac{2L1}{\\frac{A1}{2}} = 4R1
     }
 
     function removeHighlights() {
-      if (currentHighlights.highlightedText) {
-        const originalText = currentHighlights.highlightedText
-          .replace(/<span class="highlight">/g, '')
-          .replace(/<\/span>/g, '');
-        document.getElementById("transcriptInput").value = originalText;
+      if (currentHighlights.originalText) {
+         document.getElementById("transcriptInput").value = currentHighlights.originalText;
       }
-      currentHighlights = [];
+      currentHighlights = {};
     }
 
     function scrollToLine(lineNumber) {
       const textarea = document.getElementById("transcriptInput");
       const lines = textarea.value.split('\n');
+      if (lineNumber >= lines.length) return;
 
-      // حساب موضع السطر في النص
       let position = 0;
       for (let i = 0; i < lineNumber; i++) {
-        position += lines[i].length + 1; // +1 لرمز السطر الجديد
+        position += lines[i].length + 1;
       }
 
-      // التمرير إلى الموضع
       textarea.focus();
-      textarea.setSelectionRange(position, position);
+      textarea.scrollTop = 0;
 
-      // تظليل مؤقت للسطر المحدد
-      textarea.style.backgroundColor = '';
-      void textarea.offsetHeight; // إعادة تدفق
-      textarea.style.backgroundColor = 'rgba(255, 255, 0, 0.2)';
+      const avgLineHeight = textarea.scrollHeight / lines.length;
+      const scrollToPosition = lineNumber * avgLineHeight - (textarea.clientHeight / 3);
+      textarea.scrollTop = Math.max(0, scrollToPosition);
+
+      const endPosition = position + lines[lineNumber].length;
+      textarea.setSelectionRange(position, endPosition);
+
+      textarea.style.transition = 'background-color 0.2s ease-in-out';
+      textarea.style.backgroundColor = 'rgba(255, 255, 0, 0.3)';
       setTimeout(() => {
         textarea.style.backgroundColor = '';
-      }, 2000);
+      }, 1500);
     }
 
     async function summarizeText() {
       const text = document.getElementById("transcriptInput").value;
-      if (!text || text.includes("⏳")) return alert("❌ يرجى إدخال نص الترجمة.");
+      if (!text || text.trim() === "" || text.includes("⏳")) return alert("❌ يرجى إدخال نص الترجمة أو الانتظار حتى يتم جلبه.");
 
       document.getElementById("summaryBox").innerHTML = "⏳ جاري تلخيص المحتوى...";
       try {
@@ -617,132 +691,109 @@ R2 = \\rho \\frac{2L1}{\\frac{A1}{2}} = 4R1
           headers: {
             "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
             "Content-Type": "application/json",
-            "HTTP-Referer": "<YOUR_SITE_URL>", // Optional
-            "X-Title": "<YOUR_SITE_NAME>"  // Optional
           },
           body: JSON.stringify({
-            "model": "deepseek/deepseek-r1:free",
+            "model": "anthropic/claude-3-haiku-20240307",
             "messages": [{
               "role": "user",
-              "content": `قم بتلخيص هذا النص التعليمي مع التركيز على النقاط الرئيسية.
-              أبرز جميع القوانين الرياضية بصيغة LaTeX داخل علامات \\( \\) للمعادلات السطرية و \\[ \\] للمعادلات المستقلة.
-              رتب المحتوى في أقسام واضحة مع عناوين رئيسية وفرعية.
-              تأكد من أن جميع المعادلات الرياضية تظهر بشكل صحيح داخل النص.
+              "content": `قم بتلخيص هذا النص التعليمي باللغة العربية مع التركيز على النقاط الرئيسية والمفاهيم الهامة.
+              إذا وجدت أي قوانين أو معادلات رياضية، أبرزها بوضوح باستخدام صيغة LaTeX. للمعادلات داخل السطر استخدم \\( ... \\) وللمعادلات في سطر منفصل استخدم \\[ ... \\].
+              نظم الملخص في فقرات واضحة، ويمكنك استخدام العناوين والنقاط إذا كان ذلك مناسبًا لتحسين القراءة.
+              تأكد من أن الصياغة عربية وسليمة.
 
-              النص:\n\n${text}`
+              النص المراد تلخيصه:\n\n${text}`
             }]
           })
         });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`خطأ من API: ${response.status} ${response.statusText} - ${errorData.error?.message || 'لا يوجد تفاصيل'}`);
+        }
+
         const data = await response.json();
-        let summary = data.choices[0].message.content || "⚠️ لم يتم العثور على ملخص.";
-        // تحسين عرض المعادلات الرياضية
+        let summary = "";
+        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+             summary = data.choices[0].message.content;
+        } else {
+            summary = "⚠️ لم يتم العثور على ملخص أو حدث خطأ في الاستجابة.";
+            console.error("استجابة غير متوقعة من API:", data);
+        }
+
         summary = formatMathEquations(summary);
-        // تحويل التنسيقات الأساسية
         summary = summary
           .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
           .replace(/\*(.*?)\*/g, '<i>$1</i>')
           .replace(/_(.*?)_/g, '<u>$1</u>')
-          .replace(/\n/g, '<br>');
-        // تحسين هيكلة الملخص
-        summary = enhanceSummaryStructure(summary);
+          .replace(/```(.*?)```/gs, '<pre><code>$1</code></pre>')
+          .replace(/`(.*?)`/g, '<code>$1</code>');
+
+        summary = summary.replace(/^### (.*$)/gim, '<h4 class="summary-subtitle">$1</h4>');
+        summary = summary.replace(/^## (.*$)/gim, '<h3 class="summary-section-title">$1</h3>');
+        summary = summary.replace(/^# (.*$)/gim, '<h2 class="summary-main-title">$1</h2>');
+
+        summary = summary.replace(/^\s*[-*+] (.*$)/gim, '<li>$1</li>');
+        summary = summary.replace(/^\s*\d+\. (.*$)/gim, '<li>$1</li>');
+        summary = summary.replace(/<ul>\s*<li>/g, '<ul><li>');
+        summary = summary.replace(/<\/li>\s*<\/ul>/g, '</li></ul>');
+        summary = summary.replace(/(<li>.*<\/li>)(?![\s\S]*<ul><li>)/g, '<ul>$1</ul>');
+        summary = summary.replace(/<ol>\s*<li>/g, '<ol><li>');
+        summary = summary.replace(/<\/li>\s*<\/ol>/g, '</li></ol>');
+        summary = summary.replace(/(<li>.*<\/li>)(?![\s\S]*<ol><li>)/g, '<ol>$1</ol>');
+
+        summary = summary.replace(/\n/g, '<br>');
+        summary = summary.replace(/<\/(h[2-4]|ul|ol|li|pre)><br>/gi, '</$1>');
+        summary = summary.replace(/<(ul|ol)><br>/gi, '<$1>');
+        summary = summary.replace(/<br><br>/g, '<br>');
 
         document.getElementById("summaryBox").innerHTML = summary;
-        // إعادة تحميل MathJax لعرض المعادلات الرياضية
-        if (typeof MathJax !== 'undefined') {
-          MathJax.typesetPromise().then(() => {
-            console.log('MathJax rendering complete');
+        if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
+          MathJax.typesetPromise([document.getElementById("summaryBox")]).then(() => {
+            console.log('MathJax rendering complete for summary');
           }).catch((err) => {
             console.error('MathJax rendering error:', err);
           });
         }
       } catch (error) {
-        document.getElementById("summaryBox").innerHTML = "❌ حدث خطأ أثناء جلب الملخص.";
-        console.error(error);
+        document.getElementById("summaryBox").innerHTML = `❌ حدث خطأ أثناء جلب الملخص: ${error.message}`;
+        console.error("خطأ تلخيص النص:", error);
       }
     }
 
     function formatMathEquations(text) {
-      // معالجة المعادلات المستقلة (display style)
-      text = text.replace(/\\\[(.*?)\\\]/gs, function(match, equation) {
-        // تنظيف المعادلة من أي وسوم HTML قد تكون موجودة
-        equation = equation.replace(/<[^>]*>/g, '');
-        return `\\[${equation}\\]`; // لا تقم بوضعها داخل div هنا
-      });
-      // معالجة المعادلات السطرية (inline)
-      text = text.replace(/\\\((.*?)\\\)/gs, function(match, equation) {
-        // تنظيف المعادلة من أي وسوم HTML قد تكون موجودة
-        equation = equation.replace(/<[^>]*>/g, '');
-        return `<span class="latex">\\(${equation}\\)</span>`;
-      });
-      return text;
-    }
-
-    function enhanceSummaryStructure(summary) {
-      // تحسين هيكلة الملخص
-      let enhanced = summary;
-      // إضافة أقسام للملخص
-      enhanced = enhanced.replace(/<br><br>(\d+\..*?)<br>/g, '<div class="summary-section"><div class="summary-title">$1</div>');
-      enhanced = enhanced.replace(/<br><br>/g, '</div><div class="summary-section">');
-      enhanced += '</div>';
-
-      // تحسين عرض القوانين
-      enhanced = enhanced.replace(/(القانون|قانون|المعادلة|معادلة)(.*?):/g, '<div class="summary-laws"><div class="law-title">$1$2:</div>');
-      enhanced = enhanced.replace(/<br><br>(?=\D)/g, '</div><br><br>');
-
-      return enhanced;
-    }
-
-    function changeSpeed(speed) {
-      if (player && player.setPlaybackRate) {
-        try {
-          player.setPlaybackRate(speed);
-          console.log("تم تغيير السرعة إلى:", speed);
-        } catch (e) {
-          console.error("حدث خطأ في تغيير السرعة:", e);
-          alert("❌ حدث خطأ في تغيير السرعة، يرجى التأكد من تحميل الفيديو أولاً");
-        }
-      } else {
-        alert("❌ المشغل غير جاهز بعد، يرجى تحميل الفيديو أولاً");
-      }
-    }
-
-    function seek(seconds) {
-      if (player && player.getCurrentTime && player.seekTo) {
-        try {
-          let currentTime = player.getCurrentTime();
-          let newTime = currentTime + seconds;
-          if (newTime < 0) newTime = 0;
-          player.seekTo(newTime, true);
-          console.log("تم الانتقال إلى:", newTime);
-        } catch (e) {
-          console.error("حدث خطأ في الانتقال:", e);
-          alert("❌ حدث خطأ في الانتقال، يرجى التأكد من تحميل الفيديو أولاً");
-        }
-      } else {
-        alert("❌ المشغل غير جاهز بعد، يرجى تحميل الفيديو أولاً");
-      }
+        text = text.replace(/\\\[([\s\S]*?)\\\]/gs, function(match, equation) {
+            equation = equation.replace(/<[^>]*>/g, '').trim();
+            equation = equation.replace(/<br\s*\/?>/gi, ' ');
+            return `<div class="math-container">\\[${equation}\\]</div>`;
+        });
+        text = text.replace(/\\\((.*?)\\\)/gs, function(match, equation) {
+            equation = equation.replace(/<[^>]*>/g, '').trim();
+            equation = equation.replace(/<br\s*\/?>/gi, ' ');
+            return `<span class="latex">\\(${equation}\\)</span>`;
+        });
+        return text;
     }
 
     function saveNote() {
-      if (player && player.getCurrentTime) {
-        try {
-          let currentTime = player.getCurrentTime();
-          let noteText = document.getElementById("noteText").value;
+      if (!isPlayerReady()) {
+        alert("❌ لا يمكن حفظ ملاحظة الآن. يرجى الانتظار حتى يتم تحميل الفيديو وجاهزيته.");
+        return;
+      }
+      try {
+        let currentTime = player.getCurrentTime();
+        let noteText = document.getElementById("noteText").value;
 
-          if (noteText.trim() !== "") {
-            notes.push({ time: currentTime, text: noteText });
-            updateNotesList();
-            document.getElementById("noteText").value = "";
-            console.log("تم حفظ الملاحظة في الوقت:", currentTime);
-          } else {
-            alert("❌ يرجى كتابة ملاحظة قبل الحفظ.");
-          }
-        } catch (e) {
-          console.error("حدث خطأ في حفظ الملاحظة:", e);
-          alert("❌ حدث خطأ في حفظ الملاحظة، يرجى التأكد من تحميل الفيديو أولاً");
+        if (noteText.trim() !== "") {
+          notes.push({ time: currentTime, text: noteText });
+          updateNotesList();
+          document.getElementById("noteText").value = "";
+          console.log("تم حفظ الملاحظة في الوقت:", currentTime);
+        } else {
+          alert("❌ يرجى كتابة ملاحظة قبل الحفظ.");
         }
-      } else {
-        alert("❌ لا يوجد فيديو قيد التشغيل.");
+      } catch (e) {
+        console.error("حدث خطأ في حفظ الملاحظة:", e);
+        alert("❌ حدث خطأ في حفظ الملاحظة");
       }
     }
 
@@ -750,33 +801,51 @@ R2 = \\rho \\frac{2L1}{\\frac{A1}{2}} = 4R1
       let notesList = document.getElementById("notesList");
       notesList.innerHTML = "";
 
-      notes.forEach((note) => {
+      notes.sort((a, b) => a.time - b.time);
+
+      notes.forEach((note, index) => {
         let listItem = document.createElement("li");
-        listItem.innerHTML = `<b>[${formatTime(note.time)}]</b> ${note.text} <button class="control-btn" onclick="jumpTo(${note.time})">🔗 انتقل</button>`;
+        listItem.innerHTML = `
+            <span><b>[${formatTime(note.time)}]</b> ${escapeHtml(note.text)}</span>
+            <div>
+                <button class="control-btn" style="padding: 5px 10px; font-size: 14px;" onclick="jumpTo(${note.time})">🔗 انتقل</button>
+                <button class="clear-search-btn" style="padding: 5px 10px; font-size: 14px; background-color: #6c757d;" onclick="deleteNote(${index})">🗑 حذف</button>
+            </div>
+        `;
+        listItem.style.display = "flex";
+        listItem.style.justifyContent = "space-between";
+        listItem.style.alignItems = "center";
         notesList.appendChild(listItem);
       });
     }
 
-    function jumpTo(time) {
-      if (player && player.seekTo) {
-        try {
-          player.seekTo(time, true);
-          if (!isPlaying) {
-            player.playVideo();
-            isPlaying = true;
-            updatePlayPauseButton();
-          }
-          console.log("تم الانتقال إلى الوقت:", time);
-        } catch (e) {
-          console.error("حدث خطأ في الانتقال إلى الملاحظة:", e);
-          alert("❌ حدث خطأ في الانتقال إلى الملاحظة");
+     function deleteNote(index) {
+        if (confirm(`هل أنت متأكد من حذف هذه الملاحظة؟\n"${notes[index].text.substring(0, 50)}..."`)) {
+            notes.splice(index, 1);
+            updateNotesList();
+            console.log("تم حذف الملاحظة رقم:", index);
         }
-      } else {
-        alert("❌ المشغل غير جاهز بعد");
+    }
+
+    function jumpTo(time) {
+      if (!isPlayerReady()) {
+        alert("❌ يرجى الانتظار حتى يتم تحميل الفيديو بالكامل وجاهزيته");
+        return;
+      }
+      try {
+        player.seekTo(time, true);
+        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            player.playVideo();
+        }
+        console.log("تم الانتقال إلى الوقت:", time);
+      } catch (e) {
+        console.error("حدث خطأ في الانتقال إلى الملاحظة:", e);
+        alert("❌ حدث خطأ في الانتقال إلى الملاحظة");
       }
     }
 
     function formatTime(seconds) {
+      seconds = Math.max(0, seconds);
       let min = Math.floor(seconds / 60);
       let sec = Math.floor(seconds % 60);
       return `${min}:${sec < 10 ? "0" : ""}${sec}`;
@@ -784,14 +853,7 @@ R2 = \\rho \\frac{2L1}{\\frac{A1}{2}} = 4R1
 
     function toggleDarkMode() {
       document.body.classList.toggle("dark-mode");
-      // إعادة تطبيق التظليل إذا كان هناك بحث نشط
-      const searchText = document.getElementById("searchText").value;
-      if (searchText && searchText.trim() !== "") {
-        searchInText();
-      }
-
-      // إعادة تحميل MathJax لعرض المعادلات الرياضية
-      if (typeof MathJax !== 'undefined') {
+      if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
         MathJax.typesetPromise().then(() => {
           console.log('MathJax rendering complete after dark mode toggle');
         }).catch((err) => {
@@ -800,8 +862,107 @@ R2 = \\rho \\frac{2L1}{\\frac{A1}{2}} = 4R1
       }
     }
 
-    // تحميل واجهة برمجة يوتيوب عند بدء الصفحة
+    // دالة تصدير حالة الصفحة
+    function exportPageState() {
+      const pageState = {
+        videoUrl: document.getElementById("videoUrl").value,
+        transcript: document.getElementById("transcriptInput").value,
+        summary: document.getElementById("summaryBox").innerHTML,
+        notes: notes,
+        darkMode: document.body.classList.contains("dark-mode"),
+        timestamp: new Date().toISOString()
+      };
+
+      const stateString = JSON.stringify(pageState, null, 2);
+      document.getElementById("exportCode").value = stateString;
+      document.getElementById("exportCode").style.display = "block";
+      
+      // إنشاء ملف للتنزيل
+      const blob = new Blob([stateString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `video-summary-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      alert("✅ تم تصدير حالة الصفحة بنجاح. يمكنك أيضًا نسخ الكود من مربع النص أدناه.");
+    }
+
+    // دالة لعرض مربع حوار الاسترداد
+    function showRestoreDialog() {
+      document.getElementById("exportCode").style.display = "block";
+      document.getElementById("restoreOptions").style.display = "block";
+      document.getElementById("exportCode").placeholder = "الصق كود التصدير هنا...";
+      document.getElementById("exportCode").value = "";
+    }
+
+    // دالة لإخفاء مربع حوار الاسترداد
+    function hideRestoreDialog() {
+      document.getElementById("exportCode").style.display = "none";
+      document.getElementById("restoreOptions").style.display = "none";
+    }
+
+    // دالة استرداد حالة الصفحة
+    function restorePageState() {
+      const stateString = document.getElementById("exportCode").value.trim();
+      if (!stateString) {
+        alert("❌ يرجى إدخال كود التصدير أولاً");
+        return;
+      }
+
+      try {
+        const pageState = JSON.parse(stateString);
+        
+        // استعادة إعدادات الفيديو
+        if (pageState.videoUrl) {
+          document.getElementById("videoUrl").value = pageState.videoUrl;
+          loadVideo(); // سيحمل الفيديو تلقائيًا
+        }
+        
+        // استعادة النص والملخص
+        if (pageState.transcript) {
+          document.getElementById("transcriptInput").value = pageState.transcript;
+        }
+        
+        if (pageState.summary) {
+          document.getElementById("summaryBox").innerHTML = pageState.summary;
+          if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
+            MathJax.typesetPromise([document.getElementById("summaryBox")]);
+          }
+        }
+        
+        // استعادة الملاحظات
+        if (Array.isArray(pageState.notes)) {
+          notes = pageState.notes;
+          updateNotesList();
+        }
+        
+        // استعادة الوضع الليلي
+        if (pageState.darkMode) {
+          document.body.classList.add("dark-mode");
+        } else {
+          document.body.classList.remove("dark-mode");
+        }
+        
+        hideRestoreDialog();
+        alert("✅ تم استرداد الحالة بنجاح!");
+      } catch (error) {
+        console.error("خطأ في استرداد الحالة:", error);
+        alert("❌ حدث خطأ في استرداد الحالة. يرجى التأكد من صحة كود التصدير.");
+      }
+    }
+
+    // استدعاء تحميل الواجهة البرمجية عند تحميل الصفحة
     loadYouTubeAPI();
+
+    // تحديث زر التشغيل/الإيقاف مبدئيًا ليعكس حالة عدم الجاهزية
+    document.addEventListener('DOMContentLoaded', () => {
+        updatePlayPauseButton();
+    });
+
   </script>
 </body>
 </html>
